@@ -368,14 +368,14 @@ impl Mul<Decimal> for Decimal {
 
     #[inline]
     fn mul(self, other: Decimal) -> Decimal {
-        Decimal(self.0 * other.0 / 100000)
+        Decimal((self.0 as i128 * other.0 as i128 / 100000) as i64)
     }
 }
 
 impl MulAssign<Decimal> for Decimal {
     #[inline]
     fn mul_assign(&mut self, other: Decimal) {
-        self.0 = (self.0 * other.0) / 100000;
+        self.0 = ((self.0 as i128 * other.0 as i128) / 100000) as i64;
     }
 }
 
