@@ -150,14 +150,14 @@ impl Div<Decimal> for Decimal {
 
     #[inline]
     fn div(self, other: Decimal) -> Decimal {
-        Decimal(self.0 * 100000 / other.0)
+        Decimal((self.0 as i128 * 100000 / other.0 as i128) as i64)
     }
 }
 
 impl DivAssign<Decimal> for Decimal {
     #[inline]
     fn div_assign(&mut self, other: Decimal) {
-        self.0 = self.0 * 100000 / other.0
+        self.0 = (self.0 as i128 * 100000 / other.0 as i128) as i64
     }
 }
 
@@ -492,6 +492,11 @@ mod tests {
 
         let expected = Decimal::from_str("0.51968").unwrap();
         assert_eq!(expected, x / y);
+
+        let x: Decimal = 1_000_000_000.into();
+        let expected: Decimal = 1.into();
+
+        assert_eq!(expected, x / x);
     }
 
     #[test]
@@ -501,6 +506,11 @@ mod tests {
         x /= y;
 
         let expected = Decimal::from_str("0.51968").unwrap();
+        assert_eq!(expected, x);
+
+        let mut x: Decimal = 1_000_000_000.into();
+        let expected: Decimal = 1.into();
+        x /= x;
         assert_eq!(expected, x);
     }
 
@@ -530,6 +540,11 @@ mod tests {
 
         let expected: Decimal = 3.3528.into();
         assert_eq!(expected, x * y);
+
+        let x: Decimal = 1_000_000.into();
+        let expected: Decimal = 1_000_000_000_000i64.into();
+        
+        assert_eq!(expected, x * x);
     }
 
     #[test]
@@ -539,6 +554,13 @@ mod tests {
         x *= y;
 
         let expected: Decimal = 3.3528.into();
+        assert_eq!(expected, x);
+
+        let mut x: Decimal = 1_000_000.into();
+        let expected: Decimal = 1_000_000_000_000i64.into();
+
+        x *= x;
+
         assert_eq!(expected, x);
     }
 
