@@ -26,6 +26,9 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
+pub const MAX: Decimal = Decimal(std::i64::MAX);
+pub const MIN: Decimal = Decimal(std::i64::MIN);
+
 /// A Decimal type for integer calculation of financial amount.
 /// 
 /// # Note
@@ -597,4 +600,10 @@ mod tests {
         let expected: Decimal = 5.into();
         assert_eq!(expected, actual);
     }
+
+    #[test]
+    fn test_limits() {
+        let x = (MAX - 0.00001.into() + 0.00001.into()) * 1.into() / 1.into();
+        assert_eq!(MAX, x);
+    }   
 }
