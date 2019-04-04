@@ -30,9 +30,9 @@ pub const MAX: Decimal = Decimal(std::i64::MAX);
 pub const MIN: Decimal = Decimal(std::i64::MIN);
 
 /// A Decimal type for integer calculation of financial amount.
-/// 
+///
 /// # Note
-/// 
+///
 /// The type is able to take 14 digits before the dot and 5 digits after the dot.
 #[derive(Clone, Copy, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Decimal(i64);
@@ -54,19 +54,18 @@ impl AddAssign<Decimal> for Decimal {
 }
 
 impl Debug for Decimal {
+    #[inline]
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        let v = self.0 / 100000;
-        let d = self.0 - v * 100000;
-        write!(f, "{}.{:05}", v, d)
+        write!(f, "{}", self)
     }
 }
 
 impl Decimal {
     /// Initialize a Decimal value using a value integer and a scale
     /// which represent the number of digit after the dot.
-    /// 
+    ///
     /// # Panic
-    /// 
+    ///
     /// A scale greater than 18 will cause a panic.
     pub fn new_with_scale(mut value: i64, scale: u8) -> Self {
         assert!(scale < 19, "Scale {} is greater than 18", scale);
@@ -144,7 +143,11 @@ impl Display for Decimal {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
         let v = self.0 / 100000;
         let d = self.0 - v * 100000;
-        write!(f, "{}.{:05}", v, d)
+        if self.0 < 0 {
+            write!(f, "-{}.{:05}", -v, -d)
+        } else {
+            write!(f, "{}.{:05}", v, d)
+        }
     }
 }
 
@@ -272,7 +275,7 @@ impl From<isize> for Decimal {
 impl From<f32> for Decimal {
     #[inline]
     fn from(i: f32) -> Decimal {
-        Decimal((i * 100000.0) as i64)
+        Decimal::from(i as f64)
     }
 }
 
@@ -489,6 +492,13 @@ mod tests {
     }
 
     #[test]
+    fn display() {
+        assert_eq!("0.12000", format!("{}", Decimal::from(0.12)));
+        assert_eq!("-3.00000", format!("{}", Decimal::from(-3)));
+        assert_eq!("-0.30000", format!("{}", Decimal::from(-0.3)));
+    }
+
+    #[test]
     fn div() {
         let x: Decimal = 1.32.into();
         let y: Decimal = 2.54.into();
@@ -546,7 +556,7 @@ mod tests {
 
         let x: Decimal = 1_000_000.into();
         let expected: Decimal = 1_000_000_000_000i64.into();
-        
+
         assert_eq!(expected, x * x);
     }
 
@@ -605,5 +615,5 @@ mod tests {
     fn test_limits() {
         let x = (MAX - 0.00001.into() + 0.00001.into()) * 1.into() / 1.into();
         assert_eq!(MAX, x);
-    }   
+    }
 }
