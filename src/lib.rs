@@ -67,16 +67,18 @@ impl Decimal {
     /// # Panic
     ///
     /// A scale greater than 18 will cause a panic.
-    pub fn new_with_scale(mut value: i64, scale: u8) -> Self {
+    pub fn new_with_scale(value: i128, scale: u8) -> Self {
         assert!(scale < 19, "Scale {} is greater than 18", scale);
 
-        if scale < 5 {
-            value *= 10i64.pow((5 - scale) as u32);
+        let value = if scale < 5 {
+            value * 10i128.pow((5 - scale) as u32)
         } else if scale > 5 {
-            value /= 10i64.pow((scale - 5) as u32);
-        }
+            value / 10i128.pow((scale - 5) as u32)
+        } else {
+            value
+        };
 
-        Decimal(value)
+        Decimal(value as i64)
     }
 
     /// Returns true if the decimal is zero.
