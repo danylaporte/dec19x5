@@ -26,7 +26,20 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
+/// Maximum value is 92 233 720 368 547.75807
+///
+/// # Example
+/// ```
+/// assert_eq!("92233720368547.75807", &format!("{}", dec19x5::MAX));
+/// ```
 pub const MAX: Decimal = Decimal(std::i64::MAX);
+
+/// Minimum value is -92 233 720 368 547.75808
+///
+/// # Example
+/// ```
+/// assert_eq!("-92233720368547.75808", &format!("{}", dec19x5::MIN));
+/// ```
 pub const MIN: Decimal = Decimal(std::i64::MIN);
 
 /// A Decimal type for integer calculation of financial amount.
@@ -103,23 +116,45 @@ impl Decimal {
     /// assert_eq!(h.round(), (-3).into());
     /// assert_eq!(i.round(), (-4).into());
     /// ```
-    pub fn round(mut self) -> Decimal {
-        let v = self.0;
-        self.0 = (self.0 / 100000) * 100000;
+    pub fn round(self) -> Decimal {
+        let v = self.0 as i128;
+        let w = (v / 100000) * 100000;
 
-        if v - self.0 >= 50000 {
-            self.0 += 100000
-        } else if self.0 - v >= 50000 {
-            self.0 -= 100000
-        }
+        let w = if v - w >= 50000 {
+            w + 100000
+        } else if w - v >= 50000 {
+            w - 100000
+        } else {
+            w
+        };
 
-        self
+        Decimal(w as i64)
     }
 
     /// round to 2 digits
+    /// 
+    /// # Example
+    /// ```
+    /// use dec19x5::Decimal;
+    /// 
+    /// assert_eq!("200.50000", &format!("{}", Decimal::from(200.49999).round_2()));
+    /// assert_eq!("200.48000", &format!("{}", Decimal::from(200.48499).round_2()));
+    /// assert_eq!("201.00000", &format!("{}", Decimal::from(200.99999).round_2()));
+    /// ```
     #[inline]
     pub fn round_2(self) -> Decimal {
-        Decimal(Decimal(self.0 * 100).round().0 / 100)
+        let v = self.0 as i128;
+        let w = (v / 1000) * 1000;
+
+        let w = if v - w >= 500 {
+            w + 1000
+        } else if w - v >= 500 {
+            w - 1000
+        } else {
+            w
+        };
+
+        Decimal(w as i64)
     }
 
     /// Returns a Decimal value of zero.
@@ -577,6 +612,30 @@ mod tests {
         x *= x;
 
         assert_eq!(expected, x);
+    }
+
+    #[test]
+    fn round() {
+        assert_eq!(
+            "92233720368547.00000",
+            &format!("{}", Decimal(9223372036854749999).round())
+        );
+        assert_eq!(
+            "-92233720368547.00000",
+            &format!("{}", Decimal(-9223372036854749999).round())
+        );
+    }
+
+    #[test]
+    fn round2() {
+        assert_eq!(
+            "92233720368547.50000",
+            &format!("{}", Decimal(9223372036854749999).round_2())
+        );
+        assert_eq!(
+            "-92233720368547.50000",
+            &format!("{}", Decimal(-9223372036854749999).round_2())
+        );
     }
 
     #[cfg(feature = "serde")]
