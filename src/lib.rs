@@ -370,7 +370,7 @@ impl FromStr for Decimal {
             let (n, d) = s.split_at(index);
 
             if d.chars().any(|c| c == '-') {
-                return Err(Error::Parse(format!("{} cannot be parsed as decimal.", s)));
+                return Err(Error::Parse(s.to_owned()));
             }
 
             let (n, d) = (n.trim_end(), d.trim_start());
@@ -401,7 +401,7 @@ impl FromStr for Decimal {
             let d = d - d1 * 100000;
             Ok(Decimal(n * 100000 + d))
         } else {
-            Err(Error::Parse(format!("{} cannot be parsed as decimal.", s)))
+            Err(Error::Parse(s.to_owned()))
         }
     }
 }
