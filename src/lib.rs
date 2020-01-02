@@ -26,6 +26,9 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
+#[cfg(feature = "num-traits")]
+use num_traits::{cast, CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+
 /// Maximum value is 92 233 720 368 547.75807
 ///
 /// # Example
@@ -132,11 +135,11 @@ impl Decimal {
     }
 
     /// round to 2 digits
-    /// 
+    ///
     /// # Example
     /// ```
     /// use dec19x5::Decimal;
-    /// 
+    ///
     /// assert_eq!("200.50000", &format!("{}", Decimal::from(200.49999).round_2()));
     /// assert_eq!("200.48000", &format!("{}", Decimal::from(200.48499).round_2()));
     /// assert_eq!("201.00000", &format!("{}", Decimal::from(200.99999).round_2()));
@@ -161,6 +164,108 @@ impl Decimal {
     #[inline]
     pub fn zero() -> Self {
         Decimal(0)
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl CheckedAdd for Decimal {
+    #[inline]
+    fn checked_add(&self, v: &Self) -> Option<Self> {
+        Some(Self(self.0.checked_add(v.0)?))
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl CheckedDiv for Decimal {
+    fn checked_div(&self, v: &Self) -> Option<Self> {
+        if v.is_zero() {
+            None
+        } else {
+            let v = (self.0 as i128)
+                .checked_mul(100000)?
+                .checked_div(v.0 as i128)?;
+
+            Some(Self(cast(v)?))
+        }
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl CheckedMul for Decimal {
+    fn checked_mul(&self, v: &Self) -> Option<Self> {
+        let v = (self.0 as i128).checked_mul(v.0 as i128)? / 100000;
+        Some(Self(cast(v)?))
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl CheckedSub for Decimal {
+    #[inline]
+    fn checked_sub(&self, v: &Self) -> Option<Self> {
+        Some(Self(self.0.checked_sub(v.0)?))
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::One for Decimal {
+    #[inline]
+    fn one() -> Self {
+        Self(100000)
+    }
+
+    #[inline]
+    fn set_one(&mut self) {
+        self.0 = 100000;
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool
+    where
+        Self: PartialEq,
+    {
+        self.0 == 100000
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl ToPrimitive for Decimal {
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        Some(self.0 / 100000)
+    }
+
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        (self.0 / 100000).to_u64()
+    }
+
+    #[inline]
+    fn to_f32(&self) -> Option<f32> {
+        self.to_f64()?.to_f32()
+    }
+
+    #[inline]
+    fn to_f64(&self) -> Option<f64> {
+        let v: f64 = cast(self.0)?;
+        Some(v / 100000.0)
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Zero for Decimal {
+    #[inline]
+    fn zero() -> Self {
+        Decimal::zero()
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    fn set_zero(&mut self) {
+        self.0 = 0;
     }
 }
 
@@ -518,6 +623,60 @@ mod tests {
 
         let expected: Decimal = 3.86.into();
         assert_eq!(expected, x);
+    }
+
+    #[cfg(feature = "num-traits")]
+    #[test]
+    fn checked_add() {
+        let x: Decimal = 1.32.into();
+        let y: Decimal = 2.54.into();
+        let expected: Decimal = 3.86.into();
+        assert_eq!(Some(expected), x.checked_add(&y));
+    }
+
+    #[cfg(feature = "num-traits")]
+    #[test]
+    fn checked_div() {
+        let x: Decimal = 1.32.into();
+        let y: Decimal = 2.54.into();
+
+        let expected = Decimal::from_str("0.51968").unwrap();
+        assert_eq!(Some(expected), x.checked_div(&y));
+
+        let x: Decimal = 1_000_000_000.into();
+        let expected: Decimal = 1.into();
+
+        assert_eq!(Some(expected), x.checked_div(&x));
+
+        let x: Decimal = 100.into();
+        let y = Decimal::zero();
+
+        assert_eq!(None, x.checked_div(&y));
+    }
+
+    #[cfg(feature = "num-traits")]
+    #[test]
+    fn checked_mul() {
+        let x: Decimal = 1.32.into();
+        let y: Decimal = 2.54.into();
+
+        let expected: Decimal = 3.3528.into();
+        assert_eq!(Some(expected), x.checked_mul(&y));
+
+        let x: Decimal = 1_000_000.into();
+        let expected: Decimal = 1_000_000_000_000i64.into();
+
+        assert_eq!(Some(expected), x.checked_mul(&x));
+    }
+
+    #[cfg(feature = "num-traits")]
+    #[test]
+    fn checked_sub() {
+        let x: Decimal = 1.32.into();
+        let y: Decimal = 2.54.into();
+
+        let expected: Decimal = (-1.22).into();
+        assert_eq!(Some(expected), x.checked_sub(&y));
     }
 
     #[cfg(feature = "serde")]
