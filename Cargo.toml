@@ -3,7 +3,7 @@ name = "dec19x5"
 edition = "2018"
 version = "0.2.1"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
-private = true
+publish = false
 
 [dependencies]
 num-traits = { version = "0.2", optional = true }
