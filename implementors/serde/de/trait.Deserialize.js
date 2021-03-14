@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["dec19x5"] = [{"text":"impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde/1.0.124/serde/de/trait.Deserialize.html\" title=\"trait serde::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"struct\" href=\"dec19x5/struct.Decimal.html\" title=\"struct dec19x5::Decimal\">Decimal</a>","synthetic":false,"types":["dec19x5::Decimal"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

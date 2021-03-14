@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["dec19x5"] = [{"text":"impl <a class=\"trait\" href=\"https://docs.rs/num-traits/0.2/num_traits/identities/trait.One.html\" title=\"trait num_traits::identities::One\">One</a> for <a class=\"struct\" href=\"dec19x5/struct.Decimal.html\" title=\"struct dec19x5::Decimal\">Decimal</a>","synthetic":false,"types":["dec19x5::Decimal"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
