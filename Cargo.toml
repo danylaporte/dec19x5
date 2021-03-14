@@ -1,8 +1,9 @@
 [package]
 name = "dec19x5"
 edition = "2018"
-version = "0.2.1"
+version = "0.2.0"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
+private = true
 
 [dependencies]
 num-traits = { version = "0.2", optional = true }
