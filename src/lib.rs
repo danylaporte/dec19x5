@@ -160,9 +160,17 @@ impl Decimal {
         Decimal(w as i64)
     }
 
+    pub const fn scale(&self) -> u8 {
+        5
+    }
+
+    pub fn value(&self) -> i128 {
+        self.0 as i128
+    }
+
     /// Returns a Decimal value of zero.
     #[inline]
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Decimal(0)
     }
 }
@@ -602,6 +610,46 @@ impl Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(feature = "tiberius")]
+impl<'a> tiberius::FromSql<'a> for Decimal {
+    fn from_sql(value: &'a tiberius::ColumnData<'static>) -> tiberius::Result<Option<Self>> {
+        fn opt<V: Copy + Into<Decimal>>(v: &Option<V>) -> Option<Decimal> {
+            match v {
+                Some(v) => Some((*v).into()),
+                None => None,
+            }
+        }
+
+        Ok(match value {
+            tiberius::ColumnData::F32(f) => opt(f),
+            tiberius::ColumnData::F64(f) => opt(f),
+            tiberius::ColumnData::I16(i) => opt(i),
+            tiberius::ColumnData::I32(i) => opt(i),
+            tiberius::ColumnData::I64(i) => opt(i),
+            tiberius::ColumnData::Numeric(Some(n)) => {
+                Some(Decimal::new_with_scale(n.value(), n.scale()))
+            }
+            tiberius::ColumnData::Numeric(None) => None,
+            tiberius::ColumnData::U8(u) => opt(u),
+            _ => {
+                return Err(tiberius::error::Error::Conversion(
+                    "Not convertable to decimal.".into(),
+                ))
+            }
+        })
+    }
+}
+
+#[cfg(feature = "tiberius")]
+impl tiberius::ToSql for Decimal {
+    fn to_sql(&self) -> tiberius::ColumnData<'_> {
+        tiberius::ColumnData::Numeric(Some(tiberius::numeric::Numeric::new_with_scale(
+            self.value(),
+            self.scale(),
+        )))
+    }
+}
 
 #[cfg(test)]
 mod tests {
