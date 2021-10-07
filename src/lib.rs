@@ -26,6 +26,10 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
+mod atomic;
+
+pub use atomic::AtomicDecimal;
+
 #[cfg(feature = "num-traits")]
 use num_traits::{cast, CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
