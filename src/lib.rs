@@ -7,20 +7,19 @@
 //! use dec19x5::Decimal;
 //! use std::str::FromStr;
 //!
-//! fn main() {
-//!     // parse from string
-//!     let d = Decimal::from_str("13.45331").unwrap();
+//! // parse from string
+//! let d = Decimal::from_str("13.45331").unwrap();
 //!
-//!     // write to string
-//!     assert_eq!("13.45331", &format!("{}", d));
+//! // write to string
+//! assert_eq!("13.45331", &format!("{}", d));
 //!
-//!     // load an i32
-//!     let d = Decimal::from(10i32);
+//! // load an i32
+//! let d = Decimal::from(10i32);
 //!
-//!     // multiple ops are supported.
-//!     assert_eq!(d + Decimal::from(3i32), Decimal::from(13i32));
-//! }
+//! // multiple ops are supported.
+//! assert_eq!(d + Decimal::from(3i32), Decimal::from(13i32));
 //! ```
+use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -90,15 +89,11 @@ impl Decimal {
     pub fn new_with_scale(value: i128, scale: u8) -> Self {
         assert!(scale < 19, "Scale {} is greater than 18", scale);
 
-        let value = if scale < 5 {
-            value * 10i128.pow((5 - scale) as u32)
-        } else if scale > 5 {
-            value / 10i128.pow((scale - 5) as u32)
-        } else {
-            value
-        };
-
-        Decimal(value as i64)
+        Decimal(match scale.cmp(&5) {
+            Ordering::Less => value * 10i128.pow((5 - scale) as u32),
+            Ordering::Greater => value / 10i128.pow((scale - 5) as u32),
+            Ordering::Equal => value,
+        } as _)
     }
 
     /// Returns true if the decimal is zero.
@@ -282,15 +277,30 @@ impl num_traits::Zero for Decimal {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Decimal {
+impl<'de> serde_crate::Deserialize<'de> for Decimal {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: serde_crate::Deserializer<'de>,
     {
-        // lossy precision here
-        Ok(f64::deserialize(deserializer)?.into())
+        match serde_crate::Deserialize::<'de>::deserialize(deserializer)? {
+            DecimalDe::String(s) => s
+                .parse()
+                .map_err(|e| serde_crate::de::Error::custom(format!("invalid decimal: {}", e))),
+            DecimalDe::Number(n) => n
+                .to_string()
+                .parse()
+                .map_err(|e| serde_crate::de::Error::custom(format!("invalid decimal: {}", e))),
+        }
     }
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde_crate::Deserialize)]
+#[serde(untagged, crate = "serde_crate")]
+enum DecimalDe {
+    String(String),
+    Number(serde_json::Number),
 }
 
 impl Display for Decimal {
@@ -549,11 +559,11 @@ impl Neg for Decimal {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for Decimal {
+impl serde_crate::Serialize for Decimal {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: serde_crate::Serializer,
     {
         // lossy precision here
         serializer.serialize_f64((*self).into())
@@ -619,10 +629,7 @@ impl std::error::Error for Error {}
 impl<'a> tiberius::FromSql<'a> for Decimal {
     fn from_sql(value: &'a tiberius::ColumnData<'static>) -> tiberius::Result<Option<Self>> {
         fn opt<V: Copy + Into<Decimal>>(v: &Option<V>) -> Option<Decimal> {
-            match v {
-                Some(v) => Some((*v).into()),
-                None => None,
-            }
+            v.as_ref().map(|v| (*v).into())
         }
 
         Ok(match value {
@@ -737,6 +744,19 @@ mod tests {
         let expected: Decimal = 2.54.into();
         let actual: Decimal = serde_json::from_str("2.54").unwrap();
         assert_eq!(expected, actual);
+
+        let actual: Decimal = serde_json::from_str("\"2.54\"").unwrap();
+        assert_eq!(expected, actual);
+
+        assert_eq!(
+            Decimal::new_with_scale(1665, 2),
+            serde_json::from_str("\"16.65\"").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(1665, 2),
+            serde_json::from_str("16.65").unwrap()
+        );
     }
 
     #[test]
