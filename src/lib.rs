@@ -113,10 +113,10 @@ impl Decimal {
     /// let h: Decimal = (-3.3).into();
     /// let i: Decimal = (-3.6).into();
     ///
-    /// assert_eq!(f.round(), 3.into());
-    /// assert_eq!(g.round(), 4.into());
-    /// assert_eq!(h.round(), (-3).into());
-    /// assert_eq!(i.round(), (-4).into());
+    /// assert_eq!(f.round(), 3);
+    /// assert_eq!(g.round(), 4);
+    /// assert_eq!(h.round(), -3);
+    /// assert_eq!(i.round(), -4);
     /// ```
     pub fn round(self) -> Decimal {
         let v = self.0 as i128;
@@ -565,8 +565,16 @@ impl serde_crate::Serialize for Decimal {
     where
         S: serde_crate::Serializer,
     {
-        // lossy precision here
-        serializer.serialize_f64((*self).into())
+        let s = self.to_string();
+
+        match serde_json::from_str::<serde_json::Number>(&s) {
+            Ok(n) => n.serialize(serializer),
+            Err(_) =>
+            // lossy precision here
+            {
+                serializer.serialize_f64((*self).into())
+            }
+        }
     }
 }
 
@@ -661,6 +669,151 @@ impl tiberius::ToSql for Decimal {
         )))
     }
 }
+
+macro_rules! cmp_ops {
+    ($ty:ty) => {
+        impl Add<$ty> for Decimal {
+            type Output = Decimal;
+
+            #[inline]
+            fn add(self, other: $ty) -> Decimal {
+                self + Decimal::from(other)
+            }
+        }
+
+        impl Add<Decimal> for $ty {
+            type Output = Decimal;
+
+            #[inline]
+            fn add(self, other: Decimal) -> Decimal {
+                Decimal::from(self) + other
+            }
+        }
+
+        impl AddAssign<$ty> for Decimal {
+            #[inline]
+            fn add_assign(&mut self, other: $ty) {
+                *self += Decimal::from(other)
+            }
+        }
+
+        impl Div<$ty> for Decimal {
+            type Output = Decimal;
+
+            #[inline]
+            fn div(self, other: $ty) -> Decimal {
+                self / Decimal::from(other)
+            }
+        }
+
+        impl Div<Decimal> for $ty {
+            type Output = Decimal;
+
+            #[inline]
+            fn div(self, other: Decimal) -> Decimal {
+                Decimal::from(self) / other
+            }
+        }
+
+        impl DivAssign<$ty> for Decimal {
+            #[inline]
+            fn div_assign(&mut self, other: $ty) {
+                *self /= Decimal::from(other)
+            }
+        }
+
+        impl Mul<$ty> for Decimal {
+            type Output = Decimal;
+
+            #[inline]
+            fn mul(self, other: $ty) -> Decimal {
+                self * Decimal::from(other)
+            }
+        }
+
+        impl Mul<Decimal> for $ty {
+            type Output = Decimal;
+
+            #[inline]
+            fn mul(self, other: Decimal) -> Decimal {
+                Decimal::from(self) * other
+            }
+        }
+
+        impl MulAssign<$ty> for Decimal {
+            #[inline]
+            fn mul_assign(&mut self, other: $ty) {
+                *self *= Decimal::from(other)
+            }
+        }
+
+        impl PartialEq<$ty> for Decimal {
+            #[inline]
+            fn eq(&self, other: &$ty) -> bool {
+                self == &Decimal::from(*other)
+            }
+        }
+
+        impl PartialEq<Decimal> for $ty {
+            #[inline]
+            fn eq(&self, other: &Decimal) -> bool {
+                &Decimal::from(*self) == other
+            }
+        }
+
+        impl PartialOrd<$ty> for Decimal {
+            #[inline]
+            fn partial_cmp(&self, other: &$ty) -> Option<Ordering> {
+                self.partial_cmp(&Decimal::from(*other))
+            }
+        }
+
+        impl PartialOrd<Decimal> for $ty {
+            #[inline]
+            fn partial_cmp(&self, other: &Decimal) -> Option<Ordering> {
+                Decimal::from(*self).partial_cmp(other)
+            }
+        }
+
+        impl Sub<$ty> for Decimal {
+            type Output = Decimal;
+
+            #[inline]
+            fn sub(self, other: $ty) -> Decimal {
+                self - Decimal::from(other)
+            }
+        }
+
+        impl Sub<Decimal> for $ty {
+            type Output = Decimal;
+
+            #[inline]
+            fn sub(self, other: Decimal) -> Decimal {
+                Decimal::from(self) - other
+            }
+        }
+
+        impl SubAssign<$ty> for Decimal {
+            #[inline]
+            fn sub_assign(&mut self, other: $ty) {
+                *self -= Decimal::from(other)
+            }
+        }
+    };
+}
+
+cmp_ops!(f32);
+cmp_ops!(f64);
+cmp_ops!(i8);
+cmp_ops!(i16);
+cmp_ops!(i32);
+cmp_ops!(i64);
+cmp_ops!(isize);
+cmp_ops!(u8);
+cmp_ops!(u16);
+cmp_ops!(u32);
+cmp_ops!(u64);
+cmp_ops!(usize);
 
 #[cfg(test)]
 mod tests {
@@ -898,14 +1051,13 @@ mod tests {
 
     #[test]
     fn sum() {
-        let actual = (0..5).into_iter().map(|_| -> Decimal { 1.into() }).sum();
-        let expected: Decimal = 5.into();
-        assert_eq!(expected, actual);
+        let actual: Decimal = (0..5).into_iter().map(|_| -> Decimal { 1.into() }).sum();
+        assert_eq!(5, actual);
     }
 
     #[test]
     fn test_limits() {
-        let x = (MAX - 0.00001.into() + 0.00001.into()) * 1.into() / 1.into();
+        let x: Decimal = (MAX - 0.00001 + 0.00001) * 1 / 1;
         assert_eq!(MAX, x);
     }
 }
