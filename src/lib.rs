@@ -894,21 +894,19 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn deserialize() {
-        let expected: Decimal = 2.54.into();
-        let actual: Decimal = serde_json::from_str("2.54").unwrap();
-        assert_eq!(expected, actual);
-
-        let actual: Decimal = serde_json::from_str("\"2.54\"").unwrap();
-        assert_eq!(expected, actual);
-
         assert_eq!(
-            Decimal::new_with_scale(1665, 2),
-            serde_json::from_str("\"16.65\"").unwrap()
+            Decimal::new_with_scale(254, 2),
+            serde_json::from_str::<Decimal>("2.54").unwrap()
         );
 
         assert_eq!(
             Decimal::new_with_scale(1665, 2),
-            serde_json::from_str("16.65").unwrap()
+            serde_json::from_str::<Decimal>("\"16.65\"").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(1665, 2),
+            serde_json::from_str::<Decimal>("16.65").unwrap()
         );
     }
 
