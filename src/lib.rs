@@ -526,7 +526,8 @@ impl FromStr for Decimal {
         if let (Ok(n), Ok(d)) = (nv, dv) {
             let d1 = d / 100000;
             let d = d - d1 * 100000;
-            Ok(Decimal(n * 100000 + d))
+
+            Ok(Decimal(n * 100000 + if n >= 0 { d } else { -d }))
         } else {
             Err(Error::Parse(s.to_owned()))
         }
@@ -907,6 +908,11 @@ mod tests {
         assert_eq!(
             Decimal::new_with_scale(1665, 2),
             serde_json::from_str::<Decimal>("16.65").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(-1665, 2),
+            serde_json::from_str::<Decimal>("-16.65").unwrap()
         );
     }
 
