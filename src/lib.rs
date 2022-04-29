@@ -101,8 +101,21 @@ impl Decimal {
     /// # Overflow behavior
     /// The absolute value of cannot be represented as an and attempting to calculate it will cause an overflow.
     /// This means that code in debug mode will trigger a panic on this case and optimized code will return without a panic.
-    pub fn abs(&self) -> Self {
+    #[inline]
+    pub fn abs(self) -> Self {
         Self(self.0.abs())
+    }
+
+    /// Returns true if self is negative and false if the number is zero or positive.
+    #[inline]
+    pub fn is_negative(self) -> bool {
+        self.0.is_negative()
+    }
+
+    /// Returns true if self is positive and false if the number is zero or negative.
+    #[inline]
+    pub fn is_positive(self) -> bool {
+        self.0.is_positive()
     }
 
     /// Returns true if the decimal is zero.
