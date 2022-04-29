@@ -96,6 +96,15 @@ impl Decimal {
         } as _)
     }
 
+    /// Computes the absolute value of self.
+    ///
+    /// # Overflow behavior
+    /// The absolute value of cannot be represented as an and attempting to calculate it will cause an overflow.
+    /// This means that code in debug mode will trigger a panic on this case and optimized code will return without a panic.
+    pub fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+
     /// Returns true if the decimal is zero.
     #[inline]
     pub fn is_zero(self) -> bool {
@@ -836,6 +845,13 @@ mod tests {
 
         let expected: Decimal = 3.86.into();
         assert_eq!(expected, x);
+    }
+
+    #[test]
+    fn abs() {
+        let actual = Decimal::from(-100).abs();
+        let expected = Decimal::from(100);
+        assert_eq!(expected, actual);
     }
 
     #[cfg(feature = "num-traits")]
