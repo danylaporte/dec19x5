@@ -9,7 +9,7 @@ publish = false
 num-traits = { version = "0.2", optional = true }
 serde_crate = { version = "1", features = ["derive"], optional = true, package = "serde" }
 serde_json = { version = "1", optional = true }
-tiberius = { version = "0.8", optional = true }
+tiberius = { version = "0.9", optional = true }
 
 [dev-dependencies]
 serde_json = "1"
