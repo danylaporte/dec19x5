@@ -1,6 +1,6 @@
 [package]
 name = "dec19x5"
-edition = "2018"
+edition = "2021"
 version = "1.6.1-alpha.0"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
 publish = false
@@ -9,7 +9,7 @@ publish = false
 num-traits = { version = "0.2", optional = true }
 serde_crate = { version = "1", features = ["derive"], optional = true, package = "serde" }
 serde_json = { version = "1", optional = true }
-tiberius = { version = "0.11", optional = true }
+tiberius = { version = "0.11", default_features = false, optional = true }
 
 [dev-dependencies]
 serde_json = "1"
