@@ -549,7 +549,11 @@ impl FromStr for Decimal {
             let d1 = d / 100000;
             let d = d - d1 * 100000;
 
-            Ok(Decimal(n * 100000 + if n >= 0 { d } else { -d }))
+            Ok(Decimal((n * 100000).saturating_add(if n >= 0 {
+                d
+            } else {
+                -d
+            })))
         } else {
             Err(Error::Parse(s.to_owned()))
         }
@@ -1092,5 +1096,14 @@ mod tests {
     fn test_limits() {
         let x: Decimal = (MAX - 0.00001 + 0.00001) * 1 / 1;
         assert_eq!(MAX, x);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_limits_serialize() {
+        let v = serde_json::to_string(&MAX).unwrap();
+        let v = serde_json::from_str::<Decimal>(&v).unwrap();
+
+        assert_eq!(v, MAX)
     }
 }
