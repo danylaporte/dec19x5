@@ -140,19 +140,9 @@ impl Decimal {
     /// assert_eq!(h.round(), -3);
     /// assert_eq!(i.round(), -4);
     /// ```
+    #[inline]
     pub fn round(self) -> Decimal {
-        let v = self.0 as i128;
-        let w = (v / 100000) * 100000;
-
-        let w = if v - w >= 50000 {
-            w + 100000
-        } else if w - v >= 50000 {
-            w - 100000
-        } else {
-            w
-        };
-
-        Decimal(w as i64)
+        self.round_n(0)
     }
 
     /// round to 2 digits
@@ -167,13 +157,28 @@ impl Decimal {
     /// ```
     #[inline]
     pub fn round_2(self) -> Decimal {
-        let v = self.0 as i128;
-        let w = (v / 1000) * 1000;
+        self.round_n(2)
+    }
 
-        let w = if v - w >= 500 {
-            w + 1000
-        } else if w - v >= 500 {
-            w - 1000
+    pub fn round_n(self, dec: usize) -> Decimal {
+        let v = self.0 as i128;
+
+        let d = match dec {
+            0 => 100000,
+            1 => 10000,
+            2 => 1000,
+            3 => 100,
+            4 => 10,
+            _ => return self,
+        };
+
+        let w = (v / d) * d;
+        let c = d / 2;
+
+        let w = if v - w >= c {
+            w + d
+        } else if w - v >= c {
+            w - d
         } else {
             w
         };
@@ -325,14 +330,39 @@ enum DecimalDe {
     Number(serde_json::Number),
 }
 
+/// Format Decimal
+///
+/// # Example
+/// ```
+/// use dec19x5::Decimal;
+/// use std::str::FromStr;
+///
+/// assert_eq!("10.01", format!("{:.2}", Decimal::from_str("10.014").unwrap()));
+/// assert_eq!("10.02", format!("{:.2}", Decimal::from_str("10.015").unwrap()));
+/// assert_eq!("10.01500", format!("{}", Decimal::from_str("10.015").unwrap()));
+/// assert_eq!("-10.02", format!("{:.2}", Decimal::from_str("-10.015").unwrap()));
+/// ```
 impl Display for Decimal {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        let v = self.0 / 100000;
-        let d = self.0 - v * 100000;
-        if self.0 < 0 {
-            write!(f, "-{}.{:05}", -v, -d)
-        } else {
-            write!(f, "{}.{:05}", v, d)
+        let precision = f.precision().unwrap_or(5);
+        let this = self.round_n(precision).0;
+
+        let mut v = this / 100000;
+        let mut d = this - v * 100000;
+
+        if this < 0 {
+            f.write_str("-")?;
+            v = -v;
+            d = -d;
+        }
+
+        match f.precision().unwrap_or(5) {
+            0 => write!(f, "{v}"),
+            1 => write!(f, "{v}.{:01}", d / 10000),
+            2 => write!(f, "{v}.{:02}", d / 1000),
+            3 => write!(f, "{v}.{:03}", d / 100),
+            4 => write!(f, "{v}.{:04}", d / 10),
+            _ => write!(f, "{v}.{:05}", d),
         }
     }
 }
