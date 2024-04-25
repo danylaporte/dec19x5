@@ -543,6 +543,7 @@ impl FromStr for Decimal {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let nv: Result<i64, _>;
         let dv: Result<i64, _>;
+        let mut neg = false;
         let s = s.trim();
 
         if let Some((index, _)) = s.char_indices().find(|(_, c)| c == &'.') {
@@ -555,6 +556,13 @@ impl FromStr for Decimal {
             let (n, d) = (n.trim_end(), d.trim_start());
             let d = &d[1..];
             let d = if d.len() > 5 { &d[..5] } else { d };
+
+            let n = if n.starts_with('-') {
+                neg = true;
+                n[1..].trim_start()
+            } else {
+                n
+            };
 
             dv = match d.len() {
                 0 => Ok(0),
@@ -575,15 +583,12 @@ impl FromStr for Decimal {
             dv = Ok(0);
         }
 
-        if let (Ok(n), Ok(d)) = (nv, dv) {
+        if let (Ok(ni), Ok(d)) = (nv, dv) {
             let d1 = d / 100000;
             let d = d - d1 * 100000;
+            let dd = (ni * 100000).saturating_add(d);
 
-            Ok(Decimal((n * 100000).saturating_add(if n >= 0 {
-                d
-            } else {
-                -d
-            })))
+            Ok(Decimal(if neg { dd.saturating_mul(-1) } else { dd }))
         } else {
             Err(Error::Parse(s.to_owned()))
         }
@@ -1022,6 +1027,8 @@ mod tests {
 
         let expected: Decimal = (-2).into();
         assert_eq!(expected, Decimal::from_str("-2").unwrap());
+
+        assert_eq!(Decimal::new_with_scale(-1, 2), Decimal::from_str("-0.01").unwrap());
 
         assert!(Decimal::from_str("").is_err());
         assert!(Decimal::from_str(".").is_err());
