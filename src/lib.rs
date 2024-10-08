@@ -38,7 +38,7 @@ use num_traits::{cast, CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimiti
 /// ```
 /// assert_eq!("92233720368547.75807", &format!("{}", dec19x5::MAX));
 /// ```
-pub const MAX: Decimal = Decimal(std::i64::MAX);
+pub const MAX: Decimal = Decimal(i64::MAX);
 
 /// Minimum value is -92 233 720 368 547.75808
 ///
@@ -46,7 +46,7 @@ pub const MAX: Decimal = Decimal(std::i64::MAX);
 /// ```
 /// assert_eq!("-92233720368547.75808", &format!("{}", dec19x5::MIN));
 /// ```
-pub const MIN: Decimal = Decimal(std::i64::MIN);
+pub const MIN: Decimal = Decimal(i64::MIN);
 
 /// A Decimal type for integer calculation of financial amount.
 ///
