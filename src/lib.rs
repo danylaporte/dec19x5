@@ -538,31 +538,40 @@ impl From<usize> for Decimal {
 }
 
 impl FromStr for Decimal {
-    type Err = Error;
+    type Err = DecParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let nv: Result<i64, _>;
         let dv: Result<i64, _>;
-        let mut neg = false;
-        let s = s.trim();
+        let mut s = s.trim();
+
+        let neg = if s.starts_with('-') {
+            if s.ends_with('-') {
+                return Err(DecParseError);
+            }
+
+            s = s[1..].trim_start();
+            true
+        } else if s.ends_with('-') {
+            s = s[..s.len() - 1].trim_end();
+            true
+        } else if s.starts_with('(') && s.ends_with(')') {
+            s = s[1..s.len() - 1].trim();
+            true
+        } else {
+            false
+        };
 
         if let Some((index, _)) = s.char_indices().find(|(_, c)| c == &'.') {
             let (n, d) = s.split_at(index);
 
             if d.chars().any(|c| c == '-') {
-                return Err(Error::Parse(s.to_owned()));
+                return Err(DecParseError);
             }
 
             let (n, d) = (n.trim_end(), d.trim_start());
             let d = &d[1..];
             let d = if d.len() > 5 { &d[..5] } else { d };
-
-            let n = if n.starts_with('-') {
-                neg = true;
-                n[1..].trim_start()
-            } else {
-                n
-            };
 
             dv = match d.len() {
                 0 => Ok(0),
@@ -590,7 +599,7 @@ impl FromStr for Decimal {
 
             Ok(Decimal(if neg { dd.saturating_mul(-1) } else { dd }))
         } else {
-            Err(Error::Parse(s.to_owned()))
+            Err(DecParseError)
         }
     }
 }
@@ -669,31 +678,21 @@ impl Sum for Decimal {
     }
 }
 
-pub enum Error {
-    Parse(String),
-}
+pub struct DecParseError;
 
-impl Debug for Error {
+impl Debug for DecParseError {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        match self {
-            Error::Parse(s) => {
-                f.write_str("Value \"")?;
-                f.write_str(s)?;
-                f.write_str("\" cannot be parsed as decimal.")?;
-            }
-        }
-
-        Ok(())
+        f.write_str("Unparsable as decimal.")
     }
 }
 
-impl Display for Error {
+impl Display for DecParseError {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        write!(f, "{:?}", self)
+        Debug::fmt(self, f)
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for DecParseError {}
 
 #[cfg(feature = "tiberius")]
 impl<'a> tiberius::FromSql<'a> for Decimal {
@@ -1028,7 +1027,25 @@ mod tests {
         let expected: Decimal = (-2).into();
         assert_eq!(expected, Decimal::from_str("-2").unwrap());
 
-        assert_eq!(Decimal::new_with_scale(-1, 2), Decimal::from_str("-0.01").unwrap());
+        assert_eq!(
+            Decimal::new_with_scale(-1, 2),
+            Decimal::from_str("-0.01").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(-1, 2),
+            Decimal::from_str("- 0.01").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(-1, 2),
+            Decimal::from_str("0.01-").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(-1, 2),
+            Decimal::from_str("(0.01)").unwrap()
+        );
 
         assert!(Decimal::from_str("").is_err());
         assert!(Decimal::from_str(".").is_err());
