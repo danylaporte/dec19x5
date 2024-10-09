@@ -11,7 +11,7 @@
 //! let d = Decimal::from_str("13.45331").unwrap();
 //!
 //! // write to string
-//! assert_eq!("13.45331", &format!("{}", d));
+//! assert_eq!("13.45331", &format!("{d}"));
 //!
 //! // load an i32
 //! let d = Decimal::from(10i32);
@@ -310,14 +310,14 @@ impl<'de> serde_crate::Deserialize<'de> for Decimal {
     where
         D: serde_crate::Deserializer<'de>,
     {
-        match serde_crate::Deserialize::<'de>::deserialize(deserializer)? {
-            DecimalDe::String(s) => s
-                .parse()
-                .map_err(|e| serde_crate::de::Error::custom(format!("invalid decimal: {}", e))),
-            DecimalDe::Number(n) => n
-                .to_string()
-                .parse()
-                .map_err(|e| serde_crate::de::Error::custom(format!("invalid decimal: {}", e))),
+        let s = match serde_crate::Deserialize::<'de>::deserialize(deserializer)? {
+            DecimalDe::String(s) => s,
+            DecimalDe::Number(n) => n.to_string(),
+        };
+
+        match Self::from_str(&s) {
+            Ok(v) => Ok(v),
+            Err(_) => Err(serde_crate::de::Error::custom("invalid decimal")),
         }
     }
 }
@@ -541,15 +541,13 @@ impl FromStr for Decimal {
     type Err = DecParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let nv: Result<i64, _>;
-        let dv: Result<i64, _>;
+        fn parse_u64(s: &str) -> Result<u64, DecParseError> {
+            u64::from_str(s).map_err(|_| DecParseError)
+        }
+
         let mut s = s.trim();
 
         let neg = if s.starts_with('-') {
-            if s.ends_with('-') {
-                return Err(DecParseError);
-            }
-
             s = s[1..].trim_start();
             true
         } else if s.ends_with('-') {
@@ -562,45 +560,51 @@ impl FromStr for Decimal {
             false
         };
 
+        let mut n = 0;
+        let mut d = 0;
+
         if let Some((index, _)) = s.char_indices().find(|(_, c)| c == &'.') {
-            let (n, d) = s.split_at(index);
+            let (mut ns, mut ds) = s.split_at(index);
 
-            if d.chars().any(|c| c == '-') {
-                return Err(DecParseError);
-            }
+            ns = ns.trim_end();
+            ds = ds[1..].trim_start();
 
-            let (n, d) = (n.trim_end(), d.trim_start());
-            let d = &d[1..];
-            let d = if d.len() > 5 { &d[..5] } else { d };
-
-            dv = match d.len() {
-                0 => Ok(0),
-                1 => d.parse::<i64>().map(|d| d * 10000),
-                2 => d.parse::<i64>().map(|d| d * 1000),
-                3 => d.parse::<i64>().map(|d| d * 100),
-                4 => d.parse::<i64>().map(|d| d * 10),
-                _ => d.parse::<i64>(),
+            if !ns.is_empty() {
+                n = parse_u64(ns)?
             };
 
-            if n.is_empty() && !d.is_empty() {
-                nv = Ok(0);
-            } else {
-                nv = n.parse();
+            match ds.len() {
+                0 => {
+                    if ns.is_empty() {
+                        return Err(DecParseError);
+                    }
+                }
+                1 => d = parse_u64(ds)? * 10000,
+                2 => d = parse_u64(ds)? * 1000,
+                3 => d = parse_u64(ds)? * 100,
+                4 => d = parse_u64(ds)? * 10,
+                5 => d = parse_u64(ds)?,
+                _ => return Err(DecParseError),
+            };
+        } else {
+            n = parse_u64(s)?;
+        }
+
+        if n > 92233720368547 || (n == 92233720368547 && (d > 75808 || (!neg && d > 75807))) {
+            return Err(DecParseError);
+        }
+
+        let d1 = d - (d / 100000) * 100000;
+        let mut v = ((n as i64) * 100000).saturating_add(d1 as i64);
+
+        if neg {
+            v = -v;
+            if d == 75808 {
+                v -= 1;
             }
-        } else {
-            nv = s.parse();
-            dv = Ok(0);
         }
 
-        if let (Ok(ni), Ok(d)) = (nv, dv) {
-            let d1 = d / 100000;
-            let d = d - d1 * 100000;
-            let dd = (ni * 100000).saturating_add(d);
-
-            Ok(Decimal(if neg { dd.saturating_mul(-1) } else { dd }))
-        } else {
-            Err(DecParseError)
-        }
+        Ok(Decimal(v))
     }
 }
 
@@ -1050,6 +1054,21 @@ mod tests {
         assert!(Decimal::from_str("").is_err());
         assert!(Decimal::from_str(".").is_err());
         assert!(Decimal::from_str("2.-2").is_err());
+        assert!(Decimal::from_str("2..2").is_err());
+        assert!(Decimal::from_str("--2").is_err());
+
+        assert_eq!(Decimal::from_str("92233720368547.75807").unwrap(), MAX);
+        assert_eq!(Decimal::from_str("-92233720368547.75808").unwrap(), MIN);
+
+        assert_eq!(
+            Decimal::from_str("92233720368547.70007").unwrap(),
+            Decimal::new_with_scale(9223372036854770007, 5)
+        );
+
+        assert_eq!(
+            Decimal::from_str("-92233720368547.00001").unwrap(),
+            Decimal::new_with_scale(-9223372036854700001, 5)
+        );
 
         let expected: Decimal = 2.into();
         assert_eq!(expected, Decimal::from_str("2.").unwrap());
@@ -1155,9 +1174,14 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn test_limits_serialize() {
-        let v = serde_json::to_string(&MAX).unwrap();
-        let v = serde_json::from_str::<Decimal>(&v).unwrap();
+        fn check_serialize(d: Decimal) {
+            assert_eq!(
+                serde_json::from_str::<Decimal>(&serde_json::to_string(&d).unwrap()).unwrap(),
+                d
+            );
+        }
 
-        assert_eq!(v, MAX)
+        check_serialize(Decimal::from(92233720368547i64));
+        check_serialize(Decimal::from(-92233720368547i64));
     }
 }
