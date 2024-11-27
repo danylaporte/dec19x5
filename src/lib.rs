@@ -584,6 +584,13 @@ impl FromStr for Decimal {
                 3 => d = parse_u64(ds)? * 100,
                 4 => d = parse_u64(ds)? * 10,
                 5 => d = parse_u64(ds)?,
+                6 => d = parse_u64(ds)? / 10,
+                7 => d = parse_u64(ds)? / 100,
+                8 => d = parse_u64(ds)? / 1000,
+                9 => d = parse_u64(ds)? / 10000,
+                10 => d = parse_u64(ds)? / 100000,
+                11 => d = parse_u64(ds)? / 1000000,
+                12 => d = parse_u64(ds)? / 10000000,
                 _ => return Err(DecParseError),
             };
         } else {
@@ -1075,6 +1082,11 @@ mod tests {
 
         let expected: Decimal = 0.2.into();
         assert_eq!(expected, Decimal::from_str(".2").unwrap());
+
+        assert_eq!(
+            Decimal::new_with_scale(123049, 5),
+            Decimal::from_str("1.230499123123").unwrap()
+        );
     }
 
     #[test]
