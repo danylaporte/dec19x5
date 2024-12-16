@@ -1,7 +1,7 @@
 [package]
 name = "dec19x5"
 edition = "2021"
-version = "1.10.0"
+version = "1.10.1"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
 publish = false
 
