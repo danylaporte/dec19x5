@@ -591,6 +591,10 @@ impl FromStr for Decimal {
                 10 => d = parse_u64(ds)? / 100000,
                 11 => d = parse_u64(ds)? / 1000000,
                 12 => d = parse_u64(ds)? / 10000000,
+                13 => d = parse_u64(ds)? / 100000000,
+                14 => d = parse_u64(ds)? / 1000000000,
+                15 => d = parse_u64(ds)? / 10000000000,
+                16 => d = parse_u64(ds)? / 100000000000, // used 16 digits for javascript
                 _ => return Err(DecParseError),
             };
         } else {
