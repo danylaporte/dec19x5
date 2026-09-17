@@ -30,7 +30,7 @@ mod atomic;
 pub use atomic::AtomicDecimal;
 
 #[cfg(feature = "num-traits")]
-use num_traits::{cast, CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive, cast};
 
 /// Maximum value is 92 233 720 368 547.75807
 ///
@@ -48,6 +48,25 @@ pub const MAX: Decimal = Decimal(i64::MAX);
 /// ```
 pub const MIN: Decimal = Decimal(i64::MIN);
 
+const SCALE: i64 = 100_000;
+
+const POW10: [u64; 14] = [
+    1,
+    10,
+    100,
+    1_000,
+    10_000,
+    100_000,
+    1_000_000,
+    10_000_000,
+    100_000_000,
+    1_000_000_000,
+    10_000_000_000,
+    100_000_000_000,
+    1_000_000_000_000,
+    10_000_000_000_000,
+];
+
 /// A Decimal type for integer calculation of financial amount.
 ///
 /// # Note
@@ -55,6 +74,72 @@ pub const MIN: Decimal = Decimal(i64::MIN);
 /// The type is able to take 14 digits before the dot and 5 digits after the dot.
 #[derive(Clone, Copy, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Decimal(i64);
+
+/// `a * b / SCALE`, staying in i64 when the product fits (avoids the i128 division call).
+#[inline]
+fn mul_raw(a: i64, b: i64) -> i64 {
+    match a.checked_mul(b) {
+        Some(p) => p / SCALE,
+        None => (a as i128 * b as i128 / SCALE as i128) as i64,
+    }
+}
+
+/// `a * SCALE / b`, staying in i64 when the scaled dividend fits.
+#[inline]
+fn div_raw(a: i64, b: i64) -> i64 {
+    match a.checked_mul(SCALE) {
+        Some(p) => p / b,
+        None => (a as i128 * SCALE as i128 / b as i128) as i64,
+    }
+}
+
+/// Round half away from zero to a multiple of `D`; wraps on overflow like the i128->i64 cast did.
+#[inline(always)]
+fn round_by<const D: i64>(v: i64) -> i64 {
+    let w = (v / D) * D;
+    let r = v - w;
+
+    if r >= D / 2 {
+        w.wrapping_add(D)
+    } else if -r >= D / 2 {
+        w.wrapping_sub(D)
+    } else {
+        w
+    }
+}
+
+/// Formats a raw value with `precision` (0..=5) fractional digits into the tail of `buf`.
+fn format_raw(v: i64, precision: usize, buf: &mut [u8; 24]) -> &str {
+    let mut int = (v / SCALE).unsigned_abs();
+    let mut frac = (v % SCALE).unsigned_abs() / POW10[5 - precision];
+    let mut pos = buf.len();
+
+    if precision > 0 {
+        for _ in 0..precision {
+            pos -= 1;
+            buf[pos] = b'0' + (frac % 10) as u8;
+            frac /= 10;
+        }
+        pos -= 1;
+        buf[pos] = b'.';
+    }
+
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + (int % 10) as u8;
+        int /= 10;
+        if int == 0 {
+            break;
+        }
+    }
+
+    if v < 0 {
+        pos -= 1;
+        buf[pos] = b'-';
+    }
+
+    std::str::from_utf8(&buf[pos..]).expect("ascii")
+}
 
 impl Add<Decimal> for Decimal {
     type Output = Decimal;
@@ -75,7 +160,7 @@ impl AddAssign<Decimal> for Decimal {
 impl Debug for Decimal {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        write!(f, "{}", self)
+        Display::fmt(self, f)
     }
 }
 
@@ -86,12 +171,13 @@ impl Decimal {
     /// # Panic
     ///
     /// A scale greater than 18 will cause a panic.
+    #[inline]
     pub fn new_with_scale(value: i128, scale: u8) -> Self {
         assert!(scale < 19, "Scale {} is greater than 18", scale);
 
         Decimal(match scale.cmp(&5) {
-            Ordering::Less => value * 10i128.pow((5 - scale) as u32),
-            Ordering::Greater => value / 10i128.pow((scale - 5) as u32),
+            Ordering::Less => value * POW10[(5 - scale) as usize] as i128,
+            Ordering::Greater => value / POW10[(scale - 5) as usize] as i128,
             Ordering::Equal => value,
         } as _)
     }
@@ -160,30 +246,16 @@ impl Decimal {
         self.round_n(2)
     }
 
+    #[inline]
     pub fn round_n(self, dec: usize) -> Decimal {
-        let v = self.0 as i128;
-
-        let d = match dec {
-            0 => 100000,
-            1 => 10000,
-            2 => 1000,
-            3 => 100,
-            4 => 10,
+        Decimal(match dec {
+            0 => round_by::<100_000>(self.0),
+            1 => round_by::<10_000>(self.0),
+            2 => round_by::<1_000>(self.0),
+            3 => round_by::<100>(self.0),
+            4 => round_by::<10>(self.0),
             _ => return self,
-        };
-
-        let w = (v / d) * d;
-        let c = d / 2;
-
-        let w = if v - w >= c {
-            w + d
-        } else if w - v >= c {
-            w - d
-        } else {
-            w
-        };
-
-        Decimal(w as i64)
+        })
     }
 
     pub const fn scale(&self) -> u8 {
@@ -305,29 +377,93 @@ impl num_traits::Zero for Decimal {
 
 #[cfg(feature = "serde")]
 impl<'de> serde_crate::Deserialize<'de> for Decimal {
-    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde_crate::Deserializer<'de>,
     {
-        let s = match serde_crate::Deserialize::<'de>::deserialize(deserializer)? {
-            DecimalDe::String(s) => s,
-            DecimalDe::Number(n) => n.to_string(),
-        };
+        use serde_crate::Deserialize;
+        use serde_crate::de::{Error, MapAccess, Visitor};
 
-        match Self::from_str(&s) {
-            Ok(v) => Ok(v),
-            Err(_) => Err(serde_crate::de::Error::custom("invalid decimal")),
+        fn invalid<E: Error>() -> E {
+            E::custom("invalid decimal")
         }
+
+        struct DecimalVisitor;
+
+        impl<'de> Visitor<'de> for DecimalVisitor {
+            type Value = Decimal;
+
+            fn expecting(&self, f: &mut Formatter) -> Result<(), FmtError> {
+                f.write_str("a decimal number or string")
+            }
+
+            fn visit_str<E: Error>(self, v: &str) -> Result<Decimal, E> {
+                Decimal::from_str(v).map_err(|_| invalid())
+            }
+
+            fn visit_i64<E: Error>(self, v: i64) -> Result<Decimal, E> {
+                v.checked_mul(SCALE).map(Decimal).ok_or_else(invalid)
+            }
+
+            fn visit_u64<E: Error>(self, v: u64) -> Result<Decimal, E> {
+                i64::try_from(v)
+                    .ok()
+                    .and_then(|v| v.checked_mul(SCALE))
+                    .map(Decimal)
+                    .ok_or_else(invalid)
+            }
+
+            fn visit_f64<E: Error>(self, v: f64) -> Result<Decimal, E> {
+                // Go through the shortest round-trip repr so 16.65 parses as 16.65000, not 16.64999.
+                match serde_json::Number::from_f64(v) {
+                    Some(n) => number_to_decimal(&n),
+                    None => Err(invalid()),
+                }
+            }
+
+            // serde_json with `arbitrary_precision` delivers numbers as a map.
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Decimal, A::Error> {
+                let n = serde_json::Number::deserialize(
+                    serde_crate::de::value::MapAccessDeserializer::new(map),
+                )?;
+                number_to_decimal(&n)
+            }
+        }
+
+        deserializer.deserialize_any(DecimalVisitor)
     }
 }
 
 #[cfg(feature = "serde")]
-#[derive(serde_crate::Deserialize)]
-#[serde(untagged, crate = "serde_crate")]
-enum DecimalDe {
-    String(String),
-    Number(serde_json::Number),
+fn number_to_decimal<E: serde_crate::de::Error>(n: &serde_json::Number) -> Result<Decimal, E> {
+    use std::fmt::Write;
+
+    struct Buf {
+        bytes: [u8; 40],
+        len: usize,
+    }
+
+    impl Write for Buf {
+        fn write_str(&mut self, s: &str) -> Result<(), FmtError> {
+            let end = self.len + s.len();
+            let dst = self.bytes.get_mut(self.len..end).ok_or(FmtError)?;
+            dst.copy_from_slice(s.as_bytes());
+            self.len = end;
+            Ok(())
+        }
+    }
+
+    // Anything longer than the buffer cannot be a valid decimal anyway.
+    let mut buf = Buf {
+        bytes: [0; 40],
+        len: 0,
+    };
+
+    write!(buf, "{n}")
+        .ok()
+        .and_then(|_| std::str::from_utf8(&buf.bytes[..buf.len]).ok())
+        .and_then(|s| Decimal::from_str(s).ok())
+        .ok_or_else(|| E::custom("invalid decimal"))
 }
 
 /// Format Decimal
@@ -344,26 +480,9 @@ enum DecimalDe {
 /// ```
 impl Display for Decimal {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
-        let precision = f.precision().unwrap_or(5);
-        let this = self.round_n(precision).0;
-
-        let mut v = this / 100000;
-        let mut d = this - v * 100000;
-
-        if this < 0 {
-            f.write_str("-")?;
-            v = -v;
-            d = -d;
-        }
-
-        match f.precision().unwrap_or(5) {
-            0 => write!(f, "{v}"),
-            1 => write!(f, "{v}.{:01}", d / 10000),
-            2 => write!(f, "{v}.{:02}", d / 1000),
-            3 => write!(f, "{v}.{:03}", d / 100),
-            4 => write!(f, "{v}.{:04}", d / 10),
-            _ => write!(f, "{v}.{:05}", d),
-        }
+        let precision = f.precision().unwrap_or(5).min(5);
+        let mut buf = [0u8; 24];
+        f.write_str(format_raw(self.round_n(precision).0, precision, &mut buf))
     }
 }
 
@@ -372,14 +491,14 @@ impl Div<Decimal> for Decimal {
 
     #[inline]
     fn div(self, other: Decimal) -> Decimal {
-        Decimal((self.0 as i128 * 100000 / other.0 as i128) as i64)
+        Decimal(div_raw(self.0, other.0))
     }
 }
 
 impl DivAssign<Decimal> for Decimal {
     #[inline]
     fn div_assign(&mut self, other: Decimal) {
-        self.0 = (self.0 as i128 * 100000 / other.0 as i128) as i64
+        self.0 = div_raw(self.0, other.0)
     }
 }
 
@@ -560,60 +679,42 @@ impl FromStr for Decimal {
             false
         };
 
-        let mut n = 0;
-        let mut d = 0;
+        let (n, d) = match s.find('.') {
+            Some(index) => {
+                let ns = s[..index].trim_end();
+                let ds = s[index + 1..].trim_start();
 
-        if let Some((index, _)) = s.char_indices().find(|(_, c)| c == &'.') {
-            let (mut ns, mut ds) = s.split_at(index);
+                let n = if ns.is_empty() { 0 } else { parse_u64(ns)? };
 
-            ns = ns.trim_end();
-            ds = ds[1..].trim_start();
-
-            if !ns.is_empty() {
-                n = parse_u64(ns)?
-            };
-
-            match ds.len() {
-                0 => {
-                    if ns.is_empty() {
-                        return Err(DecParseError);
+                let d = match ds.len() {
+                    0 => {
+                        if ns.is_empty() {
+                            return Err(DecParseError);
+                        }
+                        0
                     }
-                }
-                1 => d = parse_u64(ds)? * 10000,
-                2 => d = parse_u64(ds)? * 1000,
-                3 => d = parse_u64(ds)? * 100,
-                4 => d = parse_u64(ds)? * 10,
-                5 => d = parse_u64(ds)?,
-                6 => d = parse_u64(ds)? / 10,
-                7 => d = parse_u64(ds)? / 100,
-                8 => d = parse_u64(ds)? / 1000,
-                9 => d = parse_u64(ds)? / 10000,
-                10 => d = parse_u64(ds)? / 100000,
-                11 => d = parse_u64(ds)? / 1000000,
-                12 => d = parse_u64(ds)? / 10000000,
-                13 => d = parse_u64(ds)? / 100000000,
-                14 => d = parse_u64(ds)? / 1000000000,
-                15 => d = parse_u64(ds)? / 10000000000,
-                16 => d = parse_u64(ds)? / 100000000000, // used 16 digits for javascript
-                _ => return Err(DecParseError),
-            };
-        } else {
-            n = parse_u64(s)?;
-        }
+                    len @ 1..=5 => parse_u64(ds)? * POW10[5 - len],
+                    // up to 16 digits for javascript
+                    len @ 6..=16 => parse_u64(ds)? / POW10[len - 5],
+                    _ => return Err(DecParseError),
+                };
+
+                (n, d)
+            }
+            None => (parse_u64(s)?, 0),
+        };
 
         if n > 92233720368547 || (n == 92233720368547 && (d > 75808 || (!neg && d > 75807))) {
             return Err(DecParseError);
         }
 
-        let d1 = d - (d / 100000) * 100000;
-        let mut v = ((n as i64) * 100000).saturating_add(d1 as i64);
-
-        if neg {
-            v = -v;
-            if d == 75808 {
-                v -= 1;
-            }
-        }
+        // d < 100_000 here, so this fits in u64; the only value >= 2^63 is |MIN|, handled by wrapping_neg.
+        let mag = n * SCALE as u64 + d;
+        let v = if neg {
+            (mag as i64).wrapping_neg()
+        } else {
+            mag as i64
+        };
 
         Ok(Decimal(v))
     }
@@ -624,14 +725,14 @@ impl Mul<Decimal> for Decimal {
 
     #[inline]
     fn mul(self, other: Decimal) -> Decimal {
-        Decimal((self.0 as i128 * other.0 as i128 / 100000) as i64)
+        Decimal(mul_raw(self.0, other.0))
     }
 }
 
 impl MulAssign<Decimal> for Decimal {
     #[inline]
     fn mul_assign(&mut self, other: Decimal) {
-        self.0 = ((self.0 as i128 * other.0 as i128) / 100000) as i64;
+        self.0 = mul_raw(self.0, other.0);
     }
 }
 
@@ -651,9 +752,10 @@ impl serde_crate::Serialize for Decimal {
     where
         S: serde_crate::Serializer,
     {
-        let s = self.to_string();
+        let mut buf = [0u8; 24];
+        let s = format_raw(self.0, 5, &mut buf);
 
-        match serde_json::from_str::<serde_json::Number>(&s) {
+        match serde_json::from_str::<serde_json::Number>(s) {
             Ok(n) => n.serialize(serializer),
             Err(_) =>
             // lossy precision here
@@ -730,7 +832,7 @@ impl<'a> tiberius::FromSql<'a> for Decimal {
             _ => {
                 return Err(tiberius::error::Error::Conversion(
                     "Not convertable to decimal.".into(),
-                ))
+                ));
             }
         })
     }
@@ -996,6 +1098,31 @@ mod tests {
             Decimal::new_with_scale(-1665, 2),
             serde_json::from_str::<Decimal>("-16.65").unwrap()
         );
+
+        assert_eq!(
+            Decimal::from(16),
+            serde_json::from_str::<Decimal>("16").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::from(-16),
+            serde_json::from_str::<Decimal>("-16").unwrap()
+        );
+
+        assert_eq!(
+            MAX,
+            serde_json::from_str::<Decimal>("\"92233720368547.75807\"").unwrap()
+        );
+        assert_eq!(
+            MIN,
+            serde_json::from_str::<Decimal>("\"-92233720368547.75808\"").unwrap()
+        );
+
+        assert!(serde_json::from_str::<Decimal>("92233720368548").is_err());
+        assert!(serde_json::from_str::<Decimal>("-92233720368548").is_err());
+        assert!(serde_json::from_str::<Decimal>("18446744073709551615").is_err());
+        assert!(serde_json::from_str::<Decimal>("1e300").is_err());
+        assert!(serde_json::from_str::<Decimal>("true").is_err());
     }
 
     #[test]
@@ -1003,6 +1130,22 @@ mod tests {
         assert_eq!("0.12000", format!("{}", Decimal::from(0.12)));
         assert_eq!("-3.00000", format!("{}", Decimal::from(-3)));
         assert_eq!("-0.30000", format!("{}", Decimal::from(-0.3)));
+        assert_eq!("0.00000", format!("{}", Decimal::zero()));
+        assert_eq!("-0.00001", format!("{}", Decimal(-1)));
+        assert_eq!("0", format!("{:.0}", Decimal(-40000)));
+        assert_eq!("-1", format!("{:.0}", Decimal(-50000)));
+        assert_eq!("-0.4", format!("{:.1}", Decimal(-40000)));
+        assert_eq!(
+            "12.346",
+            format!("{:.3}", Decimal::from_str("12.3456").unwrap())
+        );
+        assert_eq!(
+            "12.34560",
+            format!("{:.9}", Decimal::from_str("12.3456").unwrap())
+        );
+        assert_eq!("92233720368547.75807", format!("{}", MAX));
+        assert_eq!("-92233720368547.75808", format!("{}", MIN));
+        assert_eq!(format!("{}", MIN), format!("{:?}", MIN));
     }
 
     #[test]
@@ -1091,6 +1234,41 @@ mod tests {
             Decimal::new_with_scale(123049, 5),
             Decimal::from_str("1.230499123123").unwrap()
         );
+
+        assert_eq!(
+            Decimal::new_with_scale(-175808, 5),
+            Decimal::from_str("-1.75808").unwrap()
+        );
+
+        assert_eq!(
+            Decimal::new_with_scale(-9223372036854775807, 5),
+            Decimal::from_str("-92233720368547.75807").unwrap()
+        );
+
+        assert!(Decimal::from_str("92233720368547.75808").is_err());
+        assert!(Decimal::from_str("-92233720368547.75809").is_err());
+        assert!(Decimal::from_str("92233720368548").is_err());
+    }
+
+    #[test]
+    fn mul_div_large() {
+        // Products/dividends that overflow i64 must take the i128 path and match exact math.
+        let x = Decimal::from(50_000_000_000i64);
+        let y = Decimal::from(1_000_000i64);
+        assert_eq!(Decimal::from(50_000_000_000i64), Decimal::from(50_000) * y);
+        assert_eq!(Decimal::from(50_000i64), x / y);
+
+        let big = Decimal::from(92_233_720_368_547i64);
+        assert_eq!(big, big * 1);
+        assert_eq!(big, big / 1);
+        assert_eq!(Decimal::from(-92_233_720_368_547i64), big / -1);
+        assert_eq!(Decimal::from_str("46116860184273.5").unwrap(), big / 2);
+        assert_eq!(Decimal::from_str("0.5").unwrap(), Decimal::from(1) / 2);
+        assert_eq!(
+            Decimal::from_str("-0.33333").unwrap(),
+            Decimal::from(-1) / 3
+        );
+        assert_eq!(Decimal::from_str("1.5").unwrap(), 3 * Decimal::from(0.5));
     }
 
     #[test]

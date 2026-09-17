@@ -1,13 +1,13 @@
 [package]
 name = "dec19x5"
-edition = "2021"
+edition = "2024"
 version = "1.10.1"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
 publish = false
 
 [dependencies]
 num-traits = { version = "0.2", optional = true }
-serde_crate = { version = "1", features = ["derive"], optional = true, package = "serde" }
+serde_crate = { version = "1", optional = true, package = "serde" }
 serde_json = { version = "1", optional = true }
 tiberius = { version = "0.12", default-features = false, optional = true }
 
